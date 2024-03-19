@@ -103,7 +103,7 @@ void setup()
 
   // die preferences-Library wird gestartet
 
-  if (preferences.begin("STEPPER", false))
+  if (preferences.begin("CANguru", false))
   {
     log_i("Preferences erfolgreich gestartet");
   }
