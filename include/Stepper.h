@@ -11,7 +11,7 @@
 #pragma once
 
 #include "Arduino.h"
-#include "button.h"
+#include "OneButton.h"
 
 #undef left2right
 
@@ -49,8 +49,7 @@ enum setupPhases
   phase1,
   phase2,
   phase3,
-  phase4,
-  phase5
+  phase4
 };
 
 const int steps = 4; // how many pins are in use.
@@ -72,16 +71,17 @@ const uint8_t B_minus = GPIO_NUM_10;
 #endif
 
 const uint8_t btn_Step_pin = GPIO_NUM_9;
-const uint8_t btn_Corr_pin = GPIO_NUM_21;
 
 // Verzögerungen
 const uint8_t maxstepperdelay = 10;
 const uint8_t minstepperdelay = maxstepperdelay / 5;
 const uint8_t stdstepperdelay = maxstepperdelay / 2;
-const unsigned long step_delay_max = 1200; 
+const unsigned long step_delay_max = 1200;
 
+void setContinue(bool c);
+bool getContinue();
 
-class Stepper
+class StepperBase
 {
 public:
   // Voreinstellungen, steppernummer wird physikalisch mit
@@ -124,7 +124,7 @@ public:
   // Setzt den Wert für die Verzögerung
   void SetDelay(uint8_t delay_factor)
   {
-    step_delay = step_delay_max * delay_factor;    // 60L * 1000L / stepsPerRevolution / whatSpeed;
+    step_delay = step_delay_max * delay_factor; // 60L * 1000L / stepsPerRevolution / whatSpeed;
   }
   // Setzt die Adresse eines steppers
   void Set_to_address(uint8_t _to_address)
@@ -152,7 +152,8 @@ public:
   {
     return set_stepsToSwitch;
   }
-  void Reset_stepsToSwitch() {
+  void Reset_stepsToSwitch()
+  {
     set_stepsToSwitch = false;
   }
   bool is_no_Correction()
@@ -160,32 +161,54 @@ public:
     return no_correction;
   }
 
-private:
-  // entprellt den Taster
-  Button btn_Stepper;
-  Button btn_Correction;
   void oneStep();
   void stopStepper();
-  int currpos;   // current stepper position
-  int destpos;   // stepper position, where to go
-  int increment; // increment to move for each interval
-  int endpos;
-  unsigned long now_micros; // interval between updates
-  uint8_t acc__to_address;
-  position acc_pos_dest;
-  position acc_pos_curr;
-  int leftpos;   // 74 je groesser desto weiter nach links
-  int rightpos;  // 5 je kleiner desto weiter nach rechts
-  int maxendpos; // * grdinmillis;
-  enumway way;
   bool readyToStep;
-  bool set_stepsToSwitch;
-  bool no_correction;
+  setupPhases phase;
   int8_t step;
+  directions direction;
+  unsigned long now_micros;
   unsigned long last_step_time;  // timestamp in us of when the last step was taken
   unsigned long step_delay;      // delay between steps, in us, based on speed
   unsigned long direction_delay; // delay between steps, in us, based on speed
-  directions direction;
-  setupPhases phase;
   int16_t stepsToSwitch;
+  int leftpos;   // 74 je groesser desto weiter nach links
+  position acc_pos_curr;
+  int currpos;   // current stepper position
+  bool set_stepsToSwitch;
+  int destpos;   // stepper position, where to go
+  int increment; // increment to move for each interval
+
+private:
+  int endpos;
+  uint8_t acc__to_address;
+  position acc_pos_dest;
+  int rightpos;  // 5 je kleiner desto weiter nach rechts
+  int maxendpos; // * grdinmillis;
+  enumway way;
+  bool no_correction;
+};
+
+class StepperwButton : public StepperBase
+{
+private:
+  OneButton button;
+public:
+  explicit StepperwButton(uint8_t pin):button(pin) {
+  // setup interrupt routine
+  // when not registering to the interrupt the sketch also works when the tick is called frequently.
+    button.attachClick([](void *scope) { ((StepperwButton *) scope)->singleClick();}, this);
+    button.attachDoubleClick([](void *scope) { ((StepperwButton *) scope)->doubleClick();}, this);
+  }
+
+void runForward();
+void runReverse();
+void singleClick();
+void doubleClick();
+void Update();
+
+  void handle()
+  {
+    button.tick();
+  }
 };

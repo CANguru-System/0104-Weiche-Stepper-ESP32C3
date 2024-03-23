@@ -56,7 +56,7 @@ boolean bDecoderIsAlive;
 /*
 Variablen der steppers & Magnetartikel
 */
-Stepper stepper;
+StepperwButton button(btn_Step_pin);
 
 uint8_t decoderadr;
 uint8_t stepperDelay;
@@ -77,18 +77,24 @@ void generateHash(uint8_t offset);
 
 #include "espnow.h"
 
+void IRAM_ATTR checkTicks()
+{
+  setContinue(false);
+  // include all buttons here to be checked
+}
+
 void setup()
 {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // disable brownout detector
   Serial.begin(bdrMonitor);
   delay(500);
-  log_i("\r\n\r\nCANguru - Stepper - Weiche");
-  log_i("\n on %s", ARDUINO_BOARD);
-  log_i("CPU Frequency = %d Mhz", F_CPU / 1000000);
+  log_d("\r\n\r\nCANguru - Stepper - Weiche");
+  log_d("\n on %s", ARDUINO_BOARD);
+  log_d("CPU Frequency = %d Mhz", F_CPU / 1000000);
   //  log_e("ERROR!");
   //  log_d("VERBOSE");
   //  log_w("WARNING");
-  //  log_i("INFO");
+  //  log_d("INFO");
   // der Decoder strahlt mit seiner Kennung
   // damit kennt die CANguru-Bridge (der Master) seine Decoder findet
   DEVTYPE = DEVTYPE_STEPPER;
@@ -105,7 +111,7 @@ void setup()
 
   if (preferences.begin("CANguru", false))
   {
-    log_i("Preferences erfolgreich gestartet");
+    log_d("Preferences erfolgreich gestartet");
   }
 
   uint8_t setup_todo = preferences.getUChar("setup_done", 0xFF);
@@ -183,12 +189,14 @@ void setup()
   // Variablen werden gemäß der eingelsenen Werte gesetzt
   // evtl. werden auch die steppers verändert
   // steppers mit den PINs verbinden, initialisieren & Artikel setzen wie gespeichert
-  stepper.Set_to_address(decoderadr);
-  stepper.SetDelay(stepperDelay);
-  stepper.Set_stepsToSwitch(stepsToEnd);
-  stepper.SetPosCurr(rightORleft);
-  stepper.Attach();
-  stepper.SetPosition();
+
+  attachInterrupt(digitalPinToInterrupt(btn_Step_pin), checkTicks, CHANGE);
+  button.Set_to_address(decoderadr);
+  button.SetDelay(stepperDelay);
+  button.Set_stepsToSwitch(stepsToEnd);
+  button.SetPosCurr(rightORleft);
+  button.Attach();
+  button.SetPosition();
   // Vorbereiten der Blink-LED
   stillAliveBlinkSetup(GPIO_NUM_8);
 }
@@ -216,7 +224,7 @@ void receiveKanalData()
     {
       // speichert die neue Adresse
       preferences.putUChar("decoderadr", decoderadr);
-      stepper.Set_to_address(decoderadr);
+      button.Set_to_address(decoderadr);
       //
     }
     else
@@ -233,7 +241,7 @@ void receiveKanalData()
     if (testMinMax(oldval, stepperDelay, minstepperdelay, maxstepperdelay) && preferences.getUChar("receiveTheData", true))
     {
       preferences.putUChar("SrvDel", stepperDelay);
-      stepper.SetDelay(stepperDelay);
+      button.SetDelay(stepperDelay);
       //
     }
     else
@@ -258,10 +266,10 @@ void acc_report()
   // Weichenadresse
   opFrame[data0] = 0x00;
   opFrame[data1] = 0x00;
-  opFrame[data2] = (uint8_t)(stepper.Get_to_address() >> 8);
-  opFrame[data3] = (uint8_t)stepper.Get_to_address();
+  opFrame[data2] = (uint8_t)(button.Get_to_address() >> 8);
+  opFrame[data3] = (uint8_t)button.Get_to_address();
   // Meldung der Lage
-  opFrame[data4] = stepper.GetPosCurr();
+  opFrame[data4] = button.GetPosCurr();
   sendCanFrame();
   delay(wait_time); // Delay added just so we can have time to open up
 }
@@ -269,21 +277,21 @@ void acc_report()
 // Diese Routine leitet den Positionswechsel einer Weiche/Signal ein.
 void switchAcc()
 {
-  position set_pos = stepper.GetPosDest();
+  position set_pos = button.GetPosDest();
   switch (set_pos)
   {
   case left:
   {
-    stepper.GoLeft();
+    button.GoLeft();
   }
   break;
   case right:
   {
-    stepper.GoRight();
+    button.GoRight();
   }
   break;
   }
-  stepper.SetPosCurr(set_pos);
+  button.SetPosCurr(set_pos);
   preferences.putUChar("acc_state", (uint8_t)set_pos);
   //
   acc_report();
@@ -387,15 +395,15 @@ void loop()
   // entscheidet dann, welche Routine anschließend aufgerufen wird
   // die steppers werden permant abgefragt, ob es ein Delta zwischen
   // tatsächlicher und gewünschter stepperstellung gibt
-  if (stepper.Get_set_stepsToSwitch())
+  if (button.Get_set_stepsToSwitch())
   {
-    stepsToEnd = stepper.Get_stepsToSwitch();
+    stepsToEnd = button.Get_stepsToSwitch();
     preferences.putUShort("stepsToEnd", stepsToEnd);
     //
-    stepper.Reset_stepsToSwitch();
+    button.Reset_stepsToSwitch();
   }
-  stepper.Update();
-  bBlinkAlive = stepper.is_no_Correction();
+  button.Update();
+  bBlinkAlive = button.is_no_Correction();
   if (got1CANmsg)
   {
     got1CANmsg = false;

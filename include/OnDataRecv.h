@@ -89,11 +89,11 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len)
     uint8_t _to_address = (uint16_t)((opFrame[7] << 8) | opFrame[8]) - MM_ACC + 1;
     log_i("SWITCH_ACC: %d", _to_address);
     // Auf benutzte Adresse überprüfen
-    if (_to_address == stepper.Get_to_address())
+    if (_to_address == button.Get_to_address())
     {
-      stepper.SetPosDest((position)opFrame[9]);
+      button.SetPosDest((position)opFrame[9]);
       // muss Artikel geändert werden?
-      if (stepper.PosChg())
+      if (button.PosChg())
       {
         switchAcc();
       }

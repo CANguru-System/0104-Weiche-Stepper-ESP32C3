@@ -10,17 +10,196 @@
 
 #include <Stepper.h>
 
+// ****** doubleclick
+// das System befindet sich in der Anlaufphase (phase0), i.e. Neuinstallation oder Zurücksetzen des Decoders.
+// startet die Prozedur, mit der der Laufweg des Steppers eingestellt wird.
+// Nach dem doubleClick
+// phase1:
+// läuft der Stepper vom Motor weg. Ist der Stepper am Ende angekommen, wird
+// ein singleClick
+// phase2:
+// gedrückt. Daraufhin läuft der Stepperarm in Richtung Motor. Ist er an diesem
+// Ende angekommen, wird erneut
+// ein singleClick
+// phase3:
+// gedrückt und der Motor läuft in die Anfangsposition auf der motorabgewandten Seite.
+// dort angekommen beginnt erneut phase0 (Betriebsphase)
+
+// ****** longClick
+// das System befindet sich in der Anlaufphase (phase0), i.e. Neuinstallation oder Zurücksetzen des Decoders.
+// startet eine Prozedur, in der der Stepper in die Mitte des Laufweges verschoben werden kann.
+// Nach dem longClick (loslassen des Knopfes):
+// phase4:
+// A.: doubleCick:
+// phase5:
+// Stepper läuft in Richtung Motor, Nach einem
+// singleClick:
+// phase6: bleibt der Motor stehen, dann wieder phase0.
+// B.: singleClick:
+// phase6:
+// Stepper läuft vom Motor weg. Nach einem
+// singleClick:
+// phase6: bleibt der Motor stehen, dann wieder phase0.
+
 // Voreinstellungen, steppernummer wird physikalisch mit
 // einem stepper verbunden
-void Stepper::Attach()
+
+/*  switch (phase)
+  {
+  case phase0:
+    // waiting for initial button
+    if (btndebounce())
+    {
+    }
+    if (btn_Correction.debounce())
+    {
+      // step one revolution in one direction:
+      log_d("going to Correction");
+      phase = phase4;
+      no_correction = false;
+    }
+    break;
+
+  case phase1:
+    break;
+
+  case phase2:
+    break;
+  }
+*/
+// this function will be called when the button was pressed a single time.
+
+bool bcontinue;
+
+void setContinue(bool c)
+{
+  bcontinue = c;
+}
+
+bool getContinue()
+{
+  return bcontinue;
+}
+
+void StepperwButton::runReverse()
+{
+  // läuft in Richtung der zum Motor entgegengesetzten Ende
+  direction = reverse;
+  step = steps - 1;
+  // run to one end till button is pressed
+  // step one revolution in one direction:
+  // move only if the appropriate delay has passed:
+  last_step_time = 0;
+  while (getContinue())
+  {
+    now_micros = micros();
+    if (now_micros - last_step_time >= step_delay)
+    {
+      // get the timeStamp of when you stepped:
+      last_step_time = now_micros;
+      oneStep();
+    }
+  }
+} // runReverse
+
+void StepperwButton::runForward()
+{
+  // läuft in Richtung des Motors
+  direction = forward;
+  step = 0;
+  // run to the opposite end till button is pressed
+  // step one revolution in one direction:
+  last_step_time = 0;
+  while (getContinue())
+  {
+    now_micros = micros();
+    if (now_micros - last_step_time >= step_delay)
+    {
+      // get the timeStamp of when you stepped:
+      last_step_time = now_micros;
+      oneStep();
+      stepsToSwitch++;
+    }
+  }
+} // runReverse
+
+void StepperwButton::singleClick()
+{
+  // gedrückt wird der Knopf an der roten LED
+  log_d("singleClick");
+  setContinue(true);
+  switch (phase)
+  {
+  case phase0:
+    // läuft in Richtung Ende
+    log_d("measuringphase: running to the end");
+    readyToStep = false;
+    phase = phase1;
+    runReverse();
+    break;
+  case phase1:
+    // läuft in Richtung Motor:
+    log_d("measuringphase: stops and runs to the motor");
+    phase = phase2;
+    delay(direction_delay);
+    stepsToSwitch = 0;
+    stopStepper();
+    runForward();
+    break;
+  case phase2:
+    // stoppt und läuft zurück zum anderen Ende und stoppt
+    log_d("measuringphase: stops and runs to the end");
+    stopStepper();
+    readyToStep = true;
+    leftpos = stepsToSwitch;
+    phase = phase0;
+    acc_pos_curr = left;
+    GoLeft();
+    currpos = 0;
+    set_stepsToSwitch = true;
+    break;
+  case phase3:
+    log_d("correctionphase: runs to the motor");
+    // läuft in Richtung Motor
+    phase = phase4;
+    runForward();
+    break;
+  case phase4:
+    log_d("correctionphase: stops running");
+    // beendet den Lauf nach Korrekturphase
+    stopStepper();
+    phase = phase0;
+    break;
+    }
+} // singleClick
+
+// this function will be called when the button was pressed 2 times in a short timeframe.
+void StepperwButton::doubleClick()
+{
+  log_d("correctionphase");
+  setContinue(true);
+  if (phase == phase3)
+  {
+    log_d("correctionphase: runs to the end");
+    // läuft in Richtung Ende
+    phase = phase4;
+    runReverse();
+  }
+  if (phase == phase0)
+  {
+    // startet die Korrekturphase
+    log_d("correctionphase: start");
+    phase = phase3;
+  }
+} // doubleClick
+
+void StepperBase::Attach()
 {
   // setup the pins on the microcontroller:
   pinMode(A_plus, OUTPUT);
   pinMode(A_minus, OUTPUT);
   pinMode(B_plus, OUTPUT);
   pinMode(B_minus, OUTPUT);
-  btn_Stepper.begin(btn_Step_pin);
-  btn_Correction.begin(btn_Corr_pin);
   stopStepper();
   last_step_time = 0;
   direction_delay = 250; // 20 * step_delay/1000;
@@ -41,7 +220,7 @@ void Stepper::Attach()
   }
 }
 
-void Stepper::oneStep()
+void StepperBase::oneStep()
 {
   switch (step)
   {
@@ -92,7 +271,7 @@ void Stepper::oneStep()
   }
 }
 
-void Stepper::stopStepper()
+void StepperBase::stopStepper()
 {
   digitalWrite(A_plus, LOW);
   digitalWrite(A_minus, LOW);
@@ -101,7 +280,7 @@ void Stepper::stopStepper()
 }
 
 // Setzt die Zielposition
-void Stepper::SetPosition()
+void StepperBase::SetPosition()
 {
   last_step_time = micros();
   acc_pos_dest = acc_pos_curr;
@@ -121,9 +300,9 @@ void Stepper::SetPosition()
 }
 
 // Zielposition ist links
-void Stepper::GoLeft()
+void StepperBase::GoLeft()
 {
-  log_i("going left");
+  log_d("going left");
   destpos = leftpos;
   // von currpos < 74 bis 74, des halb increment positiv
   increment = 1;
@@ -134,9 +313,9 @@ void Stepper::GoLeft()
 }
 
 // Zielposition ist rechts
-void Stepper::GoRight()
+void StepperBase::GoRight()
 {
-  log_i("going right");
+  log_d("going right");
   destpos = rightpos; // 1
                       // von currpos > 1 bis 1, des halb increment negativ
   increment = -1;
@@ -147,8 +326,9 @@ void Stepper::GoRight()
 }
 
 // Überprüft periodisch, ob die Zielposition erreicht wird
-void Stepper::Update()
+void StepperwButton::Update()
 {
+  handle();
   if (readyToStep && (destpos != currpos))
   {
     if (micros() - last_step_time >= step_delay)
@@ -160,125 +340,6 @@ void Stepper::Update()
       if (destpos == currpos)
         stopStepper();
     }
-    return;
-  }
-  switch (phase)
-  {
-  case phase0:
-    // waiting for initial button
-    if (btn_Stepper.debounce())
-    {
-      // step one revolution in one direction:
-      log_i("going to phase1");
-      readyToStep = false;
-      phase = phase1;
-      direction = reverse;
-      step = steps - 1;
-    }
-    if (btn_Correction.debounce())
-    {
-      // step one revolution in one direction:
-      log_i("going to Correction");
-      phase = phase4;
-      no_correction = false;
-    }
-    break;
-
-  case phase1:
-    // run to one end till button is pressed
-    // step one revolution in one direction:
-    now_micros = micros();
-    // move only if the appropriate delay has passed:
-    if (now_micros - last_step_time >= step_delay)
-    {
-      // get the timeStamp of when you stepped:
-      last_step_time = now_micros;
-      oneStep();
-    }
-    if (btn_Stepper.debounce())
-    {
-      // step one revolution in one direction:
-      log_i("going to phase2");
-      phase = phase2;
-      direction = forward;
-      step = 0;
-      stepsToSwitch = 0;
-      delay(direction_delay);
-      stopStepper();
-    }
-    break;
-
-  case phase2:
-    // run to the opposite end till button is pressed
-    // step one revolution in one direction:
-    now_micros = micros();
-    // move only if the appropriate delay has passed:
-    if (now_micros - last_step_time >= step_delay)
-    {
-      // get the timeStamp of when you stepped:
-      last_step_time = now_micros;
-      oneStep();
-      stepsToSwitch++;
-    }
-    if (btn_Stepper.debounce())
-    {
-      // step one revolution in one direction:
-      log_i("going to phase3");
-      phase = phase3;
-    }
-    break;
-
-  case phase3:
-    stopStepper();
-    readyToStep = true;
-    leftpos = stepsToSwitch;
-    phase = phase0;
-    acc_pos_curr = left;
-    GoLeft();
-    currpos = 0;
-    set_stepsToSwitch = true;
-    break;
-
-  case 4:
-    if (btn_Stepper.debounce())
-    {
-      // step one revolution in one direction:
-      log_i("going to phase5");
-      phase = phase5;
-      direction = forward;
-    }
-    if (btn_Correction.debounce())
-    {
-      // step one revolution in one direction:
-      log_i("going to phase5");
-      phase = phase5;
-      direction = reverse;
-    }
-    break;
-
-  case 5:
-    // run to the opposite end till button is pressed
-    // step one revolution in one direction:
-    now_micros = micros();
-    // move only if the appropriate delay has passed:
-    if (now_micros - last_step_time >= step_delay)
-    {
-      // get the timeStamp of when you stepped:
-      last_step_time = now_micros;
-      oneStep();
-    }
-    if (btn_Stepper.debounce() ||
-        btn_Correction.debounce())
-    {
-      // step one revolution in one direction:
-      log_i("finish correction");
-      phase = phase0;
-      stopStepper();
-      readyToStep = false;
-      set_stepsToSwitch = false;
-      no_correction = true;
-    }
-    break;
   }
 
   /*
